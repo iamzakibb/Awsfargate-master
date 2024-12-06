@@ -1,0 +1,111 @@
+stages:
+- terraform_setup
+- terraform_plan
+- terraform_apply
+- terraform_output
+- docker_pull_push
+- terraform_destroy
+
+variables:
+  AWS_REGION: "us-east-1" # Default AWS region
+  DOTNET_IMAGE: "mcr.microsoft.com/dotnet/samples:aspnetapp"
+
+terraform_setup:
+  stage: terraform_setup
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [ "" ]
+  script:
+  - echo "Initializing Terraform backend..."
+  - terraform init
+  - echo "Terraform setup complete."
+
+terraform_plan:
+  stage: terraform_plan
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [ "" ]
+  script:
+  - echo "Validating Terraform configuration..."
+  - terraform init
+  - terraform validate
+  - terraform plan -out=tfplan
+  artifacts:
+    paths:
+    - tfplan
+    expire_in: 2 hours
+
+terraform_apply:
+  stage: terraform_apply
+  when: manual
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [ "" ]
+  script:
+  - echo "Applying Terraform plan..."
+  - terraform init
+  - terraform apply -auto-approve tfplan
+
+terraform_output:
+  stage: terraform_output
+  needs: [ "terraform_apply" ]
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [ "" ]
+  before_script:
+  - apk add --no-cache jq
+  script:
+  - echo "Fetching Terraform outputs..."
+  - terraform init
+  - terraform output -json > outputs.json
+  - jq -r '.backend_bucket.value' outputs.json > backend_bucket
+  - jq -r '.backend_key.value' outputs.json > backend_key
+  - jq -r '.repository_url.value' outputs.json > repository_url
+  - jq -r '.ecr_repository_name.value' outputs.json > ecr_repository_name
+  artifacts:
+    paths:
+    - backend_bucket
+    - backend_key
+    - repository_url
+    - ecr_repository_name
+    expire_in: 2 hours
+
+docker_pull_push:
+  stage: docker_pull_push
+  needs: [ "terraform_output" ]
+  image:
+    name: docker:latest
+  services:
+  - docker:dind
+  before_script:
+  - apk add --no-cache curl jq python3 py3-pip py3-virtualenv
+  - python3 -m venv /tmp/venv
+  - source /tmp/venv/bin/activate
+  - pip install awscli
+  - echo "Reading Terraform outputs from artifacts..."
+  - export BACKEND_BUCKET=$(cat backend_bucket)
+  - export BACKEND_KEY=$(cat backend_key)
+  - export ECR_REPOSITORY_URL=$(cat repository_url)
+  - export REPOSITORY_NAME=$(cat ecr_repository_name)
+  - export REPOSITORY_NAME_LOWER=$(echo "$REPOSITORY_NAME" | tr '[:upper:]' '[:lower:]')
+  - echo "Logging in to AWS ECR..."
+  - aws sts get-caller-identity
+  - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$ECR_REPOSITORY_URL"
+  script:
+  - echo "Pulling .NET sample image from Microsoft's registry..."
+  - docker pull "$DOTNET_IMAGE"
+  - echo "Tagging the image for ECR..."
+  - docker tag "$DOTNET_IMAGE" "${ECR_REPOSITORY_URL}:latest"
+  - echo "Pushing the image to ECR..."
+  - docker push "${ECR_REPOSITORY_URL}:latest"
+
+terraform_destroy:
+  stage: terraform_destroy
+  when: manual
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [ "" ]
+  script:
+  - echo "Destroying Terraform-managed infrastructure..."
+  - terraform init
+  - terraform destroy -auto-approve
