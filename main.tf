@@ -65,6 +65,6 @@ module "alb" {
   vpc_id                = module.networking.vpc_id
   subnet_ids            = module.networking.subnet_ids
   security_group_id     = [aws_security_group.alb.id]
-  ecs_service_private_ips = module.ecs.private_ips  # Ensure this outputs ECS private IPs
+  ecs_service_private_ips = module.ecs.private_ips  
 }
 
