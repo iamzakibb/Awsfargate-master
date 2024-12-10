@@ -7,8 +7,13 @@ stages:
 - terraform_destroy
 
 variables:
-  AWS_REGION: "us-east-1" # Default AWS region
+  AWS_REGION: "us-east-1"
   DOTNET_IMAGE: "mcr.microsoft.com/dotnet/samples:aspnetapp"
+
+# All jobs will use the runner with the 'aws-runner' tag.
+.default:
+  tags:
+  - aws-runner
 
 terraform_setup:
   stage: terraform_setup
