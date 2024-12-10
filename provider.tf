@@ -1,9 +1,9 @@
 terraform {
   backend "s3" {
-    bucket         = "cicd-adt-tf-state-dca752-fdas-infobank-proving-ground-bucket"
+    bucket         = ""
     key            = "terraform/state"
     region         = "us-east-1"
-    dynamodb_table = "cicd-adt-tf-state-dca752-dynamo"
+    dynamodb_table = ""
   }
    required_providers {
     aws = {
