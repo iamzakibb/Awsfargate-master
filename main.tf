@@ -12,11 +12,11 @@ module "ecr" {
 module "ecs" {
   source                 = "./modules/ecs"
   cluster_name           = "dotnet-app-cluster"
-  vpc_id                 = ""
-  subnet_ids             = ["",""]
+  vpc_id                 = module.networking.vpc_id
+  subnet_ids             = module.networking.subnet_ids
   container_image        = "${module.ecr.ecr_repository_url}:latest"
-  security_group_ids     = [""]
-  alb_target_group_arn   = null
+  security_group_ids     = [aws_security_group.ecs_service.id]
+  alb_target_group_arn   = module.alb.target_group_arn
 
 }
 
