@@ -7,7 +7,7 @@ stages:
 - terraform_destroy
 
 variables:
-  AWS_REGION: "us-east-1"
+  AWS_REGION: "us-gov-1"
   DOTNET_IMAGE: "mcr.microsoft.com/dotnet/samples:aspnetapp"
 
 terraform_setup:
@@ -16,25 +16,31 @@ terraform_setup:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
   script:
-  - echo "Initializing Terraform backend..."
-  - aws sts get-caller-identity 
+  - echo "Initializing Terraform without remote backend..."
+  - aws sts get-caller-identity
   - terraform init
   - echo "Terraform setup complete."
+  artifacts:
+    paths:
+    - terraform.tfstate
+    expire_in: 2 hours
 
 terraform_plan:
   stage: terraform_plan
   image:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
+  dependencies:
+    - terraform_setup
   script:
   - echo "Validating Terraform configuration..."
-  - aws sts get-caller-identity 
-  - terraform init
+  - aws sts get-caller-identity
   - terraform validate
   - terraform plan -out=tfplan
   artifacts:
     paths:
     - tfplan
+    - terraform.tfstate
     expire_in: 2 hours
 
 terraform_apply:
@@ -43,11 +49,16 @@ terraform_apply:
   image:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
+  dependencies:
+    - terraform_plan
   script:
   - echo "Applying Terraform plan..."
-  - aws sts get-caller-identity 
-  - terraform init
+  - aws sts get-caller-identity
   - terraform apply -auto-approve tfplan
+  artifacts:
+    paths:
+    - terraform.tfstate
+    expire_in: 2 hours
 
 terraform_output:
   stage: terraform_output
@@ -55,21 +66,20 @@ terraform_output:
   image:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
+  dependencies:
+    - terraform_apply
   before_script:
   - apk add --no-cache jq
   script:
   - echo "Fetching Terraform outputs..."
-  - aws sts get-caller-identity 
-  - terraform init
+  - aws sts get-caller-identity
   - terraform output -json > outputs.json
-  - jq -r '.backend_bucket.value' outputs.json > backend_bucket
-  - jq -r '.backend_key.value' outputs.json > backend_key
+  - jq -r '.backend_bucket.value' outputs.json > backend_bucket || echo "No backend_bucket output."
   - jq -r '.repository_url.value' outputs.json > repository_url
   - jq -r '.ecr_repository_name.value' outputs.json > ecr_repository_name
   artifacts:
     paths:
-    - backend_bucket
-    - backend_key
+    - outputs.json
     - repository_url
     - ecr_repository_name
     expire_in: 2 hours
@@ -87,22 +97,17 @@ docker_pull_push:
   - source /tmp/venv/bin/activate
   - pip install awscli
   - echo "Reading Terraform outputs from artifacts..."
-  - export BACKEND_BUCKET=$(cat backend_bucket)
-  - export BACKEND_KEY=$(cat backend_key)
-  - export ECR_REPOSITORY_URL=$(cat repository_url)
-  - export REPOSITORY_NAME=$(cat ecr_repository_name)
-  - export REPOSITORY_NAME_LOWER=$(echo "$REPOSITORY_NAME" | tr '[:upper:]' '[:lower:]')
-  - echo "Verifying IAM role..."
-  - aws sts get-caller-identity 
+  - export REPOSITORY_URL=$(cat repository_url)
+  - export ECR_REPOSITORY_NAME=$(cat ecr_repository_name)
   - echo "Logging in to AWS ECR..."
-  - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$ECR_REPOSITORY_URL"
+  - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$REPOSITORY_URL"
   script:
   - echo "Pulling .NET sample image from Microsoft's registry..."
   - docker pull "$DOTNET_IMAGE"
   - echo "Tagging the image for ECR..."
-  - docker tag "$DOTNET_IMAGE" "${ECR_REPOSITORY_URL}:latest"
+  - docker tag "$DOTNET_IMAGE" "${REPOSITORY_URL}:latest"
   - echo "Pushing the image to ECR..."
-  - docker push "${ECR_REPOSITORY_URL}:latest"
+  - docker push "${REPOSITORY_URL}:latest"
 
 terraform_destroy:
   stage: terraform_destroy
@@ -110,8 +115,9 @@ terraform_destroy:
   image:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
+  dependencies:
+    - terraform_apply
   script:
   - echo "Destroying Terraform-managed infrastructure..."
-  - aws sts get-caller-identity 
-  - terraform init
+  - aws sts get-caller-identity
   - terraform destroy -auto-approve
