@@ -17,6 +17,7 @@ terraform_setup:
     entrypoint: [ "" ]
   script:
   - echo "Initializing Terraform backend..."
+  - aws sts get-caller-identity 
   - terraform init
   - echo "Terraform setup complete."
 
@@ -27,6 +28,7 @@ terraform_plan:
     entrypoint: [ "" ]
   script:
   - echo "Validating Terraform configuration..."
+  - aws sts get-caller-identity 
   - terraform init
   - terraform validate
   - terraform plan -out=tfplan
@@ -43,6 +45,7 @@ terraform_apply:
     entrypoint: [ "" ]
   script:
   - echo "Applying Terraform plan..."
+  - aws sts get-caller-identity 
   - terraform init
   - terraform apply -auto-approve tfplan
 
@@ -56,6 +59,7 @@ terraform_output:
   - apk add --no-cache jq
   script:
   - echo "Fetching Terraform outputs..."
+  - aws sts get-caller-identity 
   - terraform init
   - terraform output -json > outputs.json
   - jq -r '.backend_bucket.value' outputs.json > backend_bucket
@@ -88,8 +92,9 @@ docker_pull_push:
   - export ECR_REPOSITORY_URL=$(cat repository_url)
   - export REPOSITORY_NAME=$(cat ecr_repository_name)
   - export REPOSITORY_NAME_LOWER=$(echo "$REPOSITORY_NAME" | tr '[:upper:]' '[:lower:]')
+  - echo "Verifying IAM role..."
+  - aws sts get-caller-identity 
   - echo "Logging in to AWS ECR..."
-  - aws sts get-caller-identity
   - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$ECR_REPOSITORY_URL"
   script:
   - echo "Pulling .NET sample image from Microsoft's registry..."
@@ -107,5 +112,6 @@ terraform_destroy:
     entrypoint: [ "" ]
   script:
   - echo "Destroying Terraform-managed infrastructure..."
+  - aws sts get-caller-identity 
   - terraform init
   - terraform destroy -auto-approve
