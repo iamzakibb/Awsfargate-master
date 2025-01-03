@@ -37,10 +37,13 @@ terraform_plan:
   script:
   - echo "Validating Terraform configuration..."
   - aws sts get-caller-identity
+  - terraform validate
   - terraform plan -out=tfplan
   artifacts:
     paths:
     - tfplan
+    - .terraform
+    - .terraform.lock.hcl
     - terraform.tfstate
     expire_in: 2 hours
 
@@ -53,8 +56,9 @@ terraform_apply:
   dependencies:
     - terraform_plan
   script:
-  - echo "Applying Terraform plan..."
+  - echo "Reusing lock file and plan..."
   - aws sts get-caller-identity
+  - terraform init
   - terraform apply -auto-approve tfplan
   artifacts:
     paths:
@@ -75,7 +79,6 @@ terraform_output:
   - echo "Fetching Terraform outputs..."
   - aws sts get-caller-identity
   - terraform output -json > outputs.json
-  - jq -r '.backend_bucket.value' outputs.json > backend_bucket || echo "No backend_bucket output."
   - jq -r '.repository_url.value' outputs.json > repository_url
   - jq -r '.ecr_repository_name.value' outputs.json > ecr_repository_name
   artifacts:
