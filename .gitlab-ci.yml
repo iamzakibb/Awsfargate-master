@@ -7,7 +7,7 @@ stages:
 - terraform_destroy
 
 variables:
-  AWS_REGION: "us-gov-1"
+  AWS_REGION: "us-gov-west-1"
   DOTNET_IMAGE: "mcr.microsoft.com/dotnet/samples:aspnetapp"
 
 terraform_setup:
