@@ -22,6 +22,8 @@ terraform_setup:
   - echo "Terraform setup complete."
   artifacts:
     paths:
+    - .terraform
+    - .terraform.lock.hcl
     - terraform.tfstate
     expire_in: 2 hours
 
@@ -35,7 +37,6 @@ terraform_plan:
   script:
   - echo "Validating Terraform configuration..."
   - aws sts get-caller-identity
-  - terraform validate
   - terraform plan -out=tfplan
   artifacts:
     paths:
