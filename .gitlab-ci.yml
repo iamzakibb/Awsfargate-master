@@ -9,6 +9,21 @@ stages:
 variables:
   AWS_REGION: "us-gov-west-1"
   DOTNET_IMAGE: "mcr.microsoft.com/dotnet/samples:aspnetapp"
+  ROLE_ARN: "arn:aws-us-gov:iam::190059162174:role/cicd-cross-account-dca752-role"
+
+before_script:
+- apk add --no-cache jq
+- export AWS_DEFAULT_REGION=$AWS_REGION
+- >
+  assume_role() {
+    local ROLE_ARN=$1
+    local SESSION_NAME=$2
+    echo "Assuming role: $ROLE_ARN"
+    CREDS=$(aws sts assume-role --role-arn "$ROLE_ARN" --role-session-name "$SESSION_NAME" || { echo "Failed to assume role $ROLE_ARN"; exit 1; })
+    export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+    export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
+    export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+  }
 
 terraform_setup:
   stage: terraform_setup
@@ -16,8 +31,9 @@ terraform_setup:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
   script:
-  - echo "Initializing Terraform without remote backend..."
+  - assume_role "$ROLE_ARN" "terraform-setup"
   - aws sts get-caller-identity
+  - echo "Initializing Terraform without remote backend..."
   - terraform init
   - echo "Terraform setup complete."
   artifacts:
@@ -33,10 +49,11 @@ terraform_plan:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
   dependencies:
-    - terraform_setup
+  - terraform_setup
   script:
-  - echo "Validating Terraform configuration..."
+  - assume_role "$ROLE_ARN" "terraform-plan"
   - aws sts get-caller-identity
+  - echo "Validating Terraform configuration..."
   - terraform validate
   - terraform plan -out=tfplan
   artifacts:
@@ -54,11 +71,11 @@ terraform_apply:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
   dependencies:
-    - terraform_plan
+  - terraform_plan
   script:
-  - echo "Reusing lock file and plan..."
+  - assume_role "$ROLE_ARN" "terraform-apply"
   - aws sts get-caller-identity
-  - terraform init
+  - terraform state list || { echo "Terraform state missing or corrupted"; exit 1; }
   - terraform apply -auto-approve tfplan
   artifacts:
     paths:
@@ -72,12 +89,13 @@ terraform_output:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
   dependencies:
-    - terraform_apply
+  - terraform_apply
   before_script:
   - apk add --no-cache jq
+  - assume_role "$ROLE_ARN" "terraform-output"
   script:
-  - echo "Fetching Terraform outputs..."
   - aws sts get-caller-identity
+  - terraform state list || { echo "Terraform state missing or corrupted";  }
   - terraform output -json > outputs.json
   - jq -r '.repository_url.value' outputs.json > repository_url
   - jq -r '.ecr_repository_name.value' outputs.json > ecr_repository_name
@@ -100,17 +118,13 @@ docker_pull_push:
   - python3 -m venv /tmp/venv
   - source /tmp/venv/bin/activate
   - pip install awscli
-  - echo "Reading Terraform outputs from artifacts..."
   - export REPOSITORY_URL=$(cat repository_url)
   - export ECR_REPOSITORY_NAME=$(cat ecr_repository_name)
-  - echo "Logging in to AWS ECR..."
+  - assume_role "$ROLE_ARN" "docker-ecr"
   - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$REPOSITORY_URL"
   script:
-  - echo "Pulling .NET sample image from Microsoft's registry..."
   - docker pull "$DOTNET_IMAGE"
-  - echo "Tagging the image for ECR..."
   - docker tag "$DOTNET_IMAGE" "${REPOSITORY_URL}:latest"
-  - echo "Pushing the image to ECR..."
   - docker push "${REPOSITORY_URL}:latest"
 
 terraform_destroy:
@@ -120,8 +134,8 @@ terraform_destroy:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
   dependencies:
-    - terraform_apply
+  - terraform_apply
   script:
-  - echo "Destroying Terraform-managed infrastructure..."
+  - assume_role "$ROLE_ARN" "terraform-destroy"
   - aws sts get-caller-identity
   - terraform destroy -auto-approve
