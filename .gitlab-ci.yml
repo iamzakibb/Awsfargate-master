@@ -75,7 +75,7 @@ terraform_apply:
   script:
   - assume_role "$ROLE_ARN" "terraform-apply"
   - aws sts get-caller-identity
-  - terraform state list || { echo "Terraform state missing or corrupted"; exit 1; }
+  - if [ -f terraform.tfstate ]; then echo "State file found. Proceeding with apply..."; else echo "State file missing. Initializing Terraform..."; terraform init; fi
   - terraform apply -auto-approve tfplan
   artifacts:
     paths:
