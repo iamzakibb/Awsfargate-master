@@ -84,7 +84,7 @@ terraform_apply:
 
 terraform_output:
   stage: terraform_output
-  needs: [ "terraform_apply" ]
+  when: manual
   image:
     name: hashicorp/terraform:latest
     entrypoint: [ "" ]
@@ -108,7 +108,7 @@ terraform_output:
 
 docker_pull_push:
   stage: docker_pull_push
-  needs: [ "terraform_output" ]
+  when: manual
   image:
     name: docker:latest
   services:
