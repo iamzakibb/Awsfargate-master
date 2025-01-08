@@ -95,7 +95,7 @@ terraform_output:
   - assume_role "$ROLE_ARN" "terraform-output"
   script:
   - aws sts get-caller-identity
-  - terraform state list || { echo "Terraform state missing or corrupted";  }
+  - if [ -f terraform.tfstate ]; then echo "State file found. Proceeding with outputs..."; else echo "State file missing. Initializing Terraform..."; terraform init; fi
   - terraform output -json > outputs.json
   - jq -r '.repository_url.value' outputs.json > repository_url
   - jq -r '.ecr_repository_name.value' outputs.json > ecr_repository_name
