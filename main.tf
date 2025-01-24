@@ -1,5 +1,7 @@
 data "aws_caller_identity" "current" {}
-
+data "aws_vpc" "selected" {
+  id = var.vpc_id
+}
 # module "networking" {
 #   source           = "./modules/networking"
  
@@ -12,8 +14,8 @@ module "ecr" {
 module "ecs" {
   source                 = "./modules/ecs"
   cluster_name           = "dotnet-app-cluster"
-  vpc_id                 = ""
-  subnet_ids             = ["",""]
+  vpc_id                 = data.aws_vpc_selected.id
+  subnet_ids             = cidrsubnet(data.aws_vpc.selected.cidr_block, 3, count.index)
   container_image        = "${module.ecr.ecr_repository_url}:latest"
   security_group_ids     = [""]
   alb_target_group_arn   = null
