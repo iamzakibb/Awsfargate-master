@@ -1,12 +1,18 @@
 variable "bucket_name" {
   description = "The name of the S3 bucket to store Terraform state."
   type        = string
-  default = "afsoosmaamkhada123"
+  default = ""
 }
+variable "vpc_id" {
+  description = "The ID of the VPC where the subnets will be created"
+  type        = string
+  default = ""
+}
+
 
 variable "lock_table_name" {
   description = "The name of the DynamoDB table for state locking."
-  default = "locktfstate"
+  default = ""
   type        = string
 }
 
